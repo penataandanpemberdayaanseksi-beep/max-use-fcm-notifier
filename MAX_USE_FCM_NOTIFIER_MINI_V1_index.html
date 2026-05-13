@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MAX-USE FCM Notifier Mini</title>
+  <style>
+    *{box-sizing:border-box}
+    body{margin:0;min-height:100vh;font-family:Arial,system-ui,sans-serif;background:linear-gradient(135deg,#eef6ff,#f8fafc);display:flex;align-items:center;justify-content:center;padding:22px;color:#0f172a}
+    .card{width:min(94vw,560px);background:rgba(255,255,255,.82);backdrop-filter:blur(18px);border:1px solid rgba(148,163,184,.35);border-radius:28px;box-shadow:0 24px 70px rgba(15,23,42,.14);padding:26px}
+    .brand{display:flex;align-items:center;gap:12px;margin-bottom:16px}.logo{width:44px;height:44px;border-radius:16px;background:linear-gradient(135deg,#0ea5e9,#7c3aed);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900}.brand h1{font-size:22px;margin:0}.sub{color:#64748b;font-size:14px;line-height:1.5;margin:4px 0 20px}
+    label{display:block;font-weight:800;font-size:13px;margin:14px 0 6px}.input{width:100%;border:1px solid #cbd5e1;border-radius:14px;padding:13px 14px;font-size:15px;outline:none;background:#fff}.input:focus{border-color:#3b82f6;box-shadow:0 0 0 4px rgba(59,130,246,.14)}
+    .btn{width:100%;border:none;border-radius:18px;padding:14px 18px;margin-top:18px;font-size:15px;font-weight:900;cursor:pointer;color:#fff;background:linear-gradient(135deg,#2563eb,#7c3aed);box-shadow:0 14px 26px rgba(37,99,235,.24)}.btn:disabled{opacity:.65;cursor:not-allowed}
+    .btn2{background:#0f172a;box-shadow:none;margin-top:10px}.status{margin-top:16px;border-radius:18px;padding:14px;background:#f8fafc;border:1px solid #e2e8f0;color:#334155;font-size:14px;line-height:1.45;white-space:pre-wrap}.ok{background:#ecfdf5;border-color:#86efac;color:#166534}.warn{background:#fff7ed;border-color:#fdba74;color:#9a3412}.err{background:#fef2f2;border-color:#fca5a5;color:#991b1b}.tiny{font-size:12px;color:#64748b;margin-top:14px;line-height:1.45}.tokenBox{font-family:monospace;font-size:11px;word-break:break-all;max-height:92px;overflow:auto;background:#0f172a;color:#dbeafe;border-radius:14px;padding:12px;margin-top:12px;display:none}
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="brand"><div class="logo">M</div><div><h1>MAX-USE Notifier Mini</h1><div class="sub">Pilot FCM 0 biaya untuk menyimpan token push Android/browser.</div></div></div>
+    <label>Email petugas</label>
+    <input id="email" class="input" type="email" placeholder="contoh: muksalfadri1919@gmail.com" autocomplete="email" />
+    <label>Nama petugas</label>
+    <input id="nama" class="input" type="text" placeholder="contoh: MUKSALMINA FADRI" />
+    <button id="activateBtn" class="btn" onclick="activatePush()">🔔 Aktifkan Push Android</button>
+    <button class="btn btn2" onclick="testLocalNotif()">🧪 Test Notifikasi Lokal</button>
+    <div id="status" class="status">Status: siap. Isi email dan nama, lalu klik Aktifkan Push Android.</div>
+    <div id="tokenBox" class="tokenBox"></div>
+    <div class="tiny">Catatan: halaman ini harus dibuka dari hosting HTTPS, bukan langsung dari file lokal. Kalau browser meminta izin notifikasi, pilih Izinkan.</div>
+  </main>
+
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-messaging-compat.js"></script>
+  <script>
+    const API_SCRIPT = "https://script.google.com/macros/s/AKfycbxavlZWf-qlB55eVit7WpwWAYRTthyY-b5n8avIMeBl_kfR4D9T8xHq97bHCQauE9o/exec";
+    const VAPID_KEY = "BPILRv8llNwr97xYO5l6ef-I9pQDrlT2QBSRYTJ4ZC0o3t_oJrgw5b7ZfOTUlaZFrvUoXhQ_-cSJEq7L3TVd7sU";
+    const firebaseConfig = {
+      apiKey: "AIzaSyAuetWAAKfKl6tApMvRUUhDKZ63tKva1Y4",
+      authDomain: "max-use-fcm-pilot.firebaseapp.com",
+      projectId: "max-use-fcm-pilot",
+      storageBucket: "max-use-fcm-pilot.firebasestorage.app",
+      messagingSenderId: "440169017283",
+      appId: "1:440169017283:web:2faa1a5daba9a9600e9776"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const messaging = firebase.messaging();
+
+    function setStatus(text, type){
+      const el = document.getElementById('status');
+      el.textContent = text;
+      el.className = 'status ' + (type || '');
+    }
+
+    function saveLocal(){
+      localStorage.setItem('MAX_USE_FCM_EMAIL', document.getElementById('email').value.trim().toLowerCase());
+      localStorage.setItem('MAX_USE_FCM_NAMA', document.getElementById('nama').value.trim());
+    }
+
+    function loadLocal(){
+      document.getElementById('email').value = localStorage.getItem('MAX_USE_FCM_EMAIL') || '';
+      document.getElementById('nama').value = localStorage.getItem('MAX_USE_FCM_NAMA') || '';
+    }
+
+    async function activatePush(){
+      const btn = document.getElementById('activateBtn');
+      const email = document.getElementById('email').value.trim().toLowerCase();
+      const nama = document.getElementById('nama').value.trim();
+      if(!email || !nama){ setStatus('Isi email dan nama petugas dulu.', 'warn'); return; }
+      if(!('serviceWorker' in navigator)){ setStatus('Browser ini belum mendukung service worker.', 'err'); return; }
+      if(!('Notification' in window)){ setStatus('Browser ini belum mendukung notifikasi web.', 'err'); return; }
+      btn.disabled = true;
+      try{
+        saveLocal();
+        setStatus('Meminta izin notifikasi...', 'warn');
+        const permission = await Notification.requestPermission();
+        if(permission !== 'granted'){
+          setStatus('Izin notifikasi belum diberikan. Buka pengaturan browser dan izinkan notifikasi untuk halaman ini.', 'err');
+          btn.disabled = false;
+          return;
+        }
+        setStatus('Mendaftarkan service worker...', 'warn');
+        const registration = await navigator.serviceWorker.register('./firebase-messaging-sw.js');
+        await navigator.serviceWorker.ready;
+        setStatus('Mengambil token FCM...', 'warn');
+        const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: registration });
+        if(!token){ throw new Error('Token kosong dari Firebase.'); }
+        const tokenBox = document.getElementById('tokenBox');
+        tokenBox.style.display = 'block';
+        tokenBox.textContent = token;
+        setStatus('Token berhasil dibuat. Menyimpan ke MAX-USE...', 'warn');
+        const url = API_SCRIPT + '?action=savefcmtoken'
+          + '&email=' + encodeURIComponent(email)
+          + '&nama_petugas=' + encodeURIComponent(nama)
+          + '&token=' + encodeURIComponent(token)
+          + '&device_info=' + encodeURIComponent(navigator.userAgent);
+        const res = await fetch(url);
+        const json = await res.json();
+        if(!json.success){ throw new Error(json.message || 'Gagal menyimpan token.'); }
+        setStatus('✅ Push Android aktif. Token FCM sudah tersimpan di sheet FCM_TOKENS.\nMode: ' + (json.mode || '-') + '\nEmail: ' + email, 'ok');
+      }catch(err){
+        console.error(err);
+        setStatus('❌ Gagal aktivasi FCM: ' + (err && err.message ? err.message : String(err)), 'err');
+      }finally{
+        btn.disabled = false;
+      }
+    }
+
+    function testLocalNotif(){
+      if(!('Notification' in window)){ setStatus('Browser tidak mendukung Notification API.', 'err'); return; }
+      Notification.requestPermission().then(p=>{
+        if(p !== 'granted'){ setStatus('Izin notifikasi belum diberikan.', 'err'); return; }
+        new Notification('MAX-USE Updating', {
+          body:'Tes notifikasi lokal dari MAX-USE Notifier Mini.',
+          icon:'https://www.gstatic.com/mobilesdk/160503_mobilesdk/logo/2x/firebase_28dp.png',
+          tag:'maxuse-local-test'
+        });
+        if(navigator.vibrate) navigator.vibrate([180,80,180]);
+        setStatus('✅ Notifikasi lokal test sudah dikirim.', 'ok');
+      });
+    }
+
+    messaging.onMessage((payload)=>{
+      console.log('Foreground FCM message:', payload);
+      const title = payload.notification?.title || 'MAX-USE Updating';
+      const body = payload.notification?.body || 'Ada notifikasi baru dari MAX-USE.';
+      new Notification(title, { body, tag:'maxuse-fcm-foreground' });
+      if(navigator.vibrate) navigator.vibrate([200,80,200]);
+    });
+
+    loadLocal();
+  </script>
+</body>
+</html>
